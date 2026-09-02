@@ -1,248 +1,335 @@
 #!/bin/bash -l
+unset CDPATH
 
-compiler_list=("intelOneAPI2021" "intel2019" "gcc12.2" "gcc12.3" "intel2020.4")
-mpi_list=("mpt2.24" "mpich" "openmpi" "mpiintel")
-icon_version_list=("2024.10" "2025.04")
+module purge
+module load gcc/gcc14-14.2.0.module
 
-# Step 1 - Retrieving parameters
-if [ $# -ne 1 ] && [ $# -ne 2 ] && [ $# -ne 3 ];then
-	echo "Enter the compiler (${compiler_list[*]}) and/or (${mpi_list[*]})!"
-        echo "$0 ${compiler_list[0]}"
-	echo or
-	echo "$0 ${compiler_list[0]} ${mpi_list[0]}"
-	echo or
-	echo "$0 ${compiler_list[0]} ${mpi_list[0]} ${icon_version_list[1]}"
-        exit 11
+# ============================================================
+# Available configurations
+# ============================================================
+
+compiler_list=("gcc14" "intel2020.4")
+mpi_list=("openmpi" "mpiintel")
+icon_version_list=("2025.04" "2026.04")
+
+# ============================================================
+# Retrieve parameters
+#
+# Usage:
+#
+#   ./set_env.sh <compiler>
+#   ./set_env.sh <compiler> <mpi>
+#   ./set_env.sh <compiler> <mpi> <icon_version>
+#
+# Examples:
+#
+#   ./set_env.sh gcc14
+#   ./set_env.sh gcc14 openmpi
+#   ./set_env.sh gcc14 openmpi 2025.04
+# ============================================================
+
+if [ $# -lt 1 ] || [ $# -gt 3 ]; then
+    #echo "Usage:"
+    #echo "  $0 <compiler> [mpi] [icon_version]"
+    #echo
+    #echo "Available compilers:"
+    #echo "  ${compiler_list[*]}"
+    #echo
+    #echo "Available MPI:"
+    #echo "  ${mpi_list[*]}"
+    #echo
+    #echo "Available ICON versions:"
+    #echo "  ${icon_version_list[*]}"
+    exit 11
 fi
 
-COMPILER=$1
-MPI=$2
-VERSION=$3
+COMPILER="$1"
 
-if [ -z $MPI ] && [ -z $VERSION ];then # entra aqui se MPI e VERSION forem vazios
-	MPI="mpiintel"
-	VERSION="2024.10"
-elif [ -z $VERSION ];then # entra aqui se MPI for vazio
-	VERSION="2024.10"
-else
-	sleep 1
+MPI="${2:-}"
+VERSION="${3:-}"
+
+# ============================================================
+# Default configuration
+# ============================================================
+
+if [ -z "${MPI}" ]; then
+    MPI="openmpi"
 fi
 
-#echo "Usando MPI: $MPI"
-#echo "Usando versão: $VERSION"
-
-# Setting common dirs and bins
-export ICONMODEL_DIR='/home/opicon/operacional/binaries/iconmodel'
-export anaconda_dir='/home/opicon/anaconda3/bin'
-export ICONTOOLS_ROOT='/home/opicon/operacional/binaries/icontools'
-export SCRIPTS_DIR='/home/opicon/operacional/scripts'
-export CDO='/usr/local/bin/cdo'
-export DATES_DIR='/home/opicon/operacional/currentdates'
-export BKP_DIR='/data2/backup/backup_icon'
-
-if [ $COMPILER == "intel2019" ]; then
-	module unload /usr/share/modules/modulefiles/gcc/gcc-12.2.0
-	module load /usr/share/modules/modulefiles/intel/intel_2019.5-compilers
-	install_dir='/home/devicon/instalacao-intel2019.5'
-
-	export ECCODES_DEFINITION_PATH=${install_dir}/libraries/definitions.edzw-2.21.0-1:${install_dir}/libraries/share/eccodes/definitions
-	#export GRIB_DEFINITION_PATH=/home/devicon/instalacao-intel2019.5/libraries/definitions.edzw-2.21.0-1:/home/devicon/instalacao-intel2019.5/libraries/share/eccodes/definitions
-
-	export LD_LIBRARY_PATH=${install_dir}/libraries/lib:/opt/intel/intel_2019.5/compilers_and_libraries_2019.5.281/linux/compiler/lib/intel64_lin:$LD_LIBRARY_PATH
-	export PATH=${install_dir}/libraries/bin:${anaconda_dir}:$PATH:.
-
-	export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.4.12'
-	export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-	export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-	export MPIBIN_ICONTOOLS='/opt/intel/intel_2019.5/compilers_and_libraries_2019.5.281/linux/mpi/intel64/bin/mpirun'
-
-	export MODEL_DIR="${install_dir}/binaries/icon-2.6.6"
-	export MPIBIN_ICONMODEL="${install_dir}/libraries/bin/mpiexec"
-	export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2.6.6_intel_ecrad_O3" # choose your model version here
-
-elif [ $COMPILER == "intelOneAPI2021" ]; then
-module unload /usr/share/modules/modulefiles/gcc/gcc-12.2.0
-module unload intel/intel_2019.5-compilers
-        export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwd_icon_tools-2.6.0'
-        export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-        export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-        export MPIBIN_ICONTOOLS='/opt/intel/intel_2019.5/compilers_and_libraries_2019.5.281/linux/mpi/intel64/bin/mpirun'
-        export MPIBIN_ICONMODEL="${install_dir}/libraries/bin/mpiexec"
-        export BINARY_ICONMODEL="$ICONMODEL_DIR/icon-model-release-2024.10-public" # choose your model version here
-
-elif [ $COMPILER == "gcc12.2" ]; then
-	module unload /usr/share/modules/modulefiles/intel/intel_2019.5-compilers
-	module load /usr/share/modules/modulefiles/gcc/gcc-12.2.0
-	install_dir='/home/devicon/instalacao-gcc-12.2.0'
-
-	if [ $MPI == "openmpi" ];then # entra aqui se digitar um segundo arg 'openmpi'
-		export ecradpath="${install_dir}/binaries/icon-model-release-2024.07-public/externals/ecrad/data"
-		export ana_varnames_map_file="${install_dir}/binaries/icon-model-release-2024.07-public/run/ana_varnames_map_file.txt"
-		export latbc_varnames_map_file="${install_dir}/binaries/icon-model-release-2024.07-public/run/dict.latbc"
-
-		export ECCODES_DEFINITION_PATH="${install_dir}/libraries/definitions.edzw-2.32.0-1:${install_dir}/libraries/eccodes-2.32.0-Source/share/eccodes/definitions"
-
-		#export LD_LIBRARY_PATH=/opt/gcc-12.2.0/lib64:$install_dir/libraries_mpich/lib64:$LD_LIBRARY_PATH
-		export LIBS_PATH="/opt/gcc-12.2.0/lib64:$install_dir/libraries/zlib-1.3.1/lib:$install_dir/libraries/szip-2.1.1/lib64:$install_dir/libraries/curl-8.9.1/lib64:$install_dir/libraries/openmpi-4.0.2/lib64:$install_dir/libraries/hdf5-1.14.4-3/lib64:$install_dir/libraries/netcdf-c-4.9.2/lib64:$install_dir/libraries/netcdf-fortran-4.6.1/lib64:$install_dir/libraries/libaec-v1.1.3/lib64:$install_dir/libraries/eccodes-2.32.0-Source/lib64:$install_dir/libraries/libxml2-2.9.14/lib64:$install_dir/libraries/OpenBLAS-0.3.28/lib"
-		export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-		export PATH="$install_dir/libraries/curl-8.9.1/bin:$install_dir/libraries/openmpi-4.0.2/bin:$install_dir/libraries/hdf5-1.14.4-3/bin:$install_dir/libraries/netcdf-c-4.9.2/bin:$install_dir/libraries/eccodes-2.32.0-Source/bin:$PATH:."
-
-		export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0'
-		export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-		export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-		export MPIBIN_ICONTOOLS="$install_dir/libraries/openmpi-4.0.2/bin/mpiexec"
-	
-		export MPIBIN_ICONMODEL="$install_dir/libraries/openmpi-4.0.2/bin/mpiexec"
-		export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.07_gcc_openmpi_O3" # choose your model version here
-	else # entra aqui se não digitar um segundo arg, ou seja, se $MPI for vazia
-		export ecradpath="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/externals/ecrad/data"
-		export ana_varnames_map_file="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/run/ana_varnames_map_file.txt"
-		export latbc_varnames_map_file="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/run/dict.latbc"
-
-		export ECCODES_DEFINITION_PATH="${install_dir}/libraries_mpich/definitions.edzw-2.32.0-1:${install_dir}/libraries_mpich/eccodes-2.32.0-Source/share/eccodes/definitions"
-
-		#export LD_LIBRARY_PATH=/opt/gcc-12.2.0/lib64:$install_dir/libraries_mpich/lib64:$LD_LIBRARY_PATH
-		export LIBS_PATH="/opt/gcc-12.2.0/lib64:$install_dir/libraries_mpich/zlib-1.3.1/lib:$install_dir/libraries_mpich/szip-2.1.1/lib64:$install_dir/libraries_mpich/curl-8.9.1/lib64:$install_dir/libraries_mpich/mpich-4.2.2/lib64:$install_dir/libraries_mpich/hdf5-1.14.4-3/lib64:$install_dir/libraries_mpich/netcdf-c-4.9.2/lib64:$install_dir/libraries_mpich/netcdf-fortran-4.6.1/lib64:$install_dir/libraries_mpich/libaec-v1.1.3/lib64:$install_dir/libraries_mpich/eccodes-2.32.0-Source/lib64:$install_dir/libraries_mpich/libxml2-2.9.14/lib64:$install_dir/libraries_mpich/OpenBLAS-0.3.28/lib"
-		export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-		export PATH="$install_dir/libraries_mpich/curl-8.9.1/bin:$install_dir/libraries_mpich/mpich-4.2.2/bin:$install_dir/libraries_mpich/hdf5-1.14.4-3/bin:$install_dir/libraries_mpich/netcdf-c-4.9.2/bin:$install_dir/libraries_mpich/eccodes-2.32.0-Source/bin:$PATH:."
-
-		export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0'
-		export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-		export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-		export MPIBIN_ICONTOOLS="$install_dir/libraries_mpich/mpich-4.2.2/bin/mpiexec"
-	
-		export MPIBIN_ICONMODEL="$install_dir/libraries_mpich/mpich-4.2.2/bin/mpiexec"
-		export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.07_gcc_mpich_O3" # choose your model version here
-	fi
-elif [ $COMPILER == "gcc12.3" ]; then
-	module unload /usr/share/modules/modulefiles/intel/intel_2019.5-compilers
-	module load /usr/share/modules/modulefiles/gcc/gcc-12.3.0
-	install_dir='/home/devicon/gcc12.3.0_install'
-
-	if [ $MPI == "openmpi" ];then # entra aqui se digitar um segundo arg 'openmpi'
-		export ecradpath="${install_dir}/binaries/icon-model-release-2024.07-public/externals/ecrad/data"
-		export ana_varnames_map_file="${install_dir}/binaries/icon-model-release-2024.07-public/run/ana_varnames_map_file.txt"
-		export latbc_varnames_map_file="${install_dir}/binaries/icon-model-release-2024.07-public/run/dict.latbc"
-
-		export ECCODES_DEFINITION_PATH="${install_dir}/libraries/definitions.edzw-2.32.0-1:${install_dir}/libraries/eccodes-2.32.0-Source/share/eccodes/definitions"
-
-		#export LD_LIBRARY_PATH=/opt/gcc-12.2.0/lib64:$install_dir/libraries_mpich/lib64:$LD_LIBRARY_PATH
-		export LIBS_PATH="/opt/gcc-12.3.0/lib64:$install_dir/libraries/zlib-1.3.1/lib:$install_dir/libraries/szip-2.1.1/lib64:$install_dir/libraries/curl-8.9.1/lib64:$install_dir/libraries/openmpi-4.0.2/lib64:$install_dir/libraries/hdf5-1.14.4-3/lib64:$install_dir/libraries/netcdf-c-4.9.2/lib64:$install_dir/libraries/netcdf-fortran-4.6.1/lib64:$install_dir/libraries/libaec-v1.1.3/lib64:$install_dir/libraries/eccodes-2.32.0-Source/lib64:$install_dir/libraries/libxml2-2.9.14/lib64:$install_dir/libraries/OpenBLAS-0.3.28/lib"
-		export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-		export PATH="$install_dir/libraries/curl-8.9.1/bin:$install_dir/libraries/openmpi-4.0.2/bin:$install_dir/libraries/hdf5-1.14.4-3/bin:$install_dir/libraries/netcdf-c-4.9.2/bin:$install_dir/libraries/eccodes-2.32.0-Source/bin:$PATH:."
-
-		export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0'
-		export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-		export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-		export MPIBIN_ICONTOOLS="$install_dir/libraries/openmpi-4.0.2/bin/mpiexec"
-	
-		export MPIBIN_ICONMODEL="$install_dir/libraries/openmpi-4.0.2/bin/mpiexec"
-		export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.07_gcc_openmpi_O3" # choose your model version here
-	else # entra aqui se não digitar um segundo arg, ou seja, se $MPI for vazia
-		export ecradpath="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/externals/ecrad/data"
-		export ana_varnames_map_file="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/run/ana_varnames_map_file.txt"
-		export latbc_varnames_map_file="${install_dir}/binaries_mpich/icon-model-release-2024.07-public/run/dict.latbc"
-
-		export ECCODES_DEFINITION_PATH="${install_dir}/libraries_mpich/definitions.edzw-2.32.0-1:${install_dir}/libraries_mpich/eccodes-2.32.0-Source/share/eccodes/definitions"
-
-		#export LD_LIBRARY_PATH=/opt/gcc-12.2.0/lib64:$install_dir/libraries_mpich/lib64:$LD_LIBRARY_PATH
-		export LIBS_PATH="/opt/gcc-12.3.0/lib64:$install_dir/libraries_mpich/zlib-1.3.1/lib:$install_dir/libraries_mpich/szip-2.1.1/lib64:$install_dir/libraries_mpich/curl-8.9.1/lib64:$install_dir/libraries_mpich/mpich-4.2.3/lib64:$install_dir/libraries_mpich/hdf5-1.14.4-3/lib64:$install_dir/libraries_mpich/netcdf-c-4.9.2/lib64:$install_dir/libraries_mpich/netcdf-fortran-4.6.1/lib64:$install_dir/libraries_mpich/libaec-v1.1.3/lib64:$install_dir/libraries_mpich/eccodes-2.32.0-Source/lib64:$install_dir/libraries_mpich/libxml2-2.9.14/lib64:$install_dir/libraries_mpich/OpenBLAS-0.3.28/lib"
-		export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-		export PATH="$install_dir/libraries_mpich/curl-8.9.1/bin:$install_dir/libraries_mpich/mpich-4.2.3/bin:$install_dir/libraries_mpich/hdf5-1.14.4-3/bin:$install_dir/libraries_mpich/netcdf-c-4.9.2/bin:$install_dir/libraries_mpich/eccodes-2.32.0-Source/bin:$PATH:."
-
-		export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0'
-		export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-		export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-		export MPIBIN_ICONTOOLS="$install_dir/libraries_mpich/mpich-4.2.3/bin/mpiexec"
-	
-		export MPIBIN_ICONMODEL="$install_dir/libraries_mpich/mpich-4.2.3/bin/mpiexec"
-		export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.07_gcc12.3.0_mpich4.2.3_O3" # choose your model version here
-	fi
-elif [ $COMPILER == "intel2020.4" ]; then
-	module unload /usr/share/modules/modulefiles/intel/intel_2019.5-compilers
-        module load /usr/share/modules/modulefiles/intel/intel_2020.4-compilers
-        install_dir='/home/devicon/intel2020.4_install'
-
-        if [ $MPI == "mpiintel" ];then # entra aqui se arg='mpiintel'
-		if [ "$VERSION" = "2024.10" ];then
-			libs_dir="$install_dir/libs_mpiintel"
-                	export ecradpath="${install_dir}/Bins-sources_mpiintel/icon-model-release-2024.10-public/externals/ecrad/data"
-                	export ana_varnames_map_file="${install_dir}/Bins-sources_mpiintel/icon-model-release-2024.10-public/run/ana_varnames_map_file.txt"
-                	export latbc_varnames_map_file="${install_dir}/Bins-sources_mpiintel/icon-model-release-2024.10-public/run/dict.latbc"
-
-                	export ECCODES_DEFINITION_PATH="${install_dir}/libs_mpiintel/definitions.edzw-2.24.2-1:${install_dir}/libs_mpiintel/eccodes-2.24.0-Source/share/eccodes/definitions"
-
-                	export LIBS_PATH="$libs_dir/zlib-1.3.1/lib:$libs_dir/szip-2.1.1/lib64:$libs_dir/curl-8.9.1/lib64:/opt/intel/intel_2020.4/compilers_and_libraries_2020.4.304/linux/mpi/intel64/lib:$libs_dir/hdf5-1.14.4-3/lib64:$libs_dir/netcdf-c-4.9.2/lib64:$libs_dir/netcdf-fortran-4.6.1/lib64:$libs_dir/libaec-v1.1.3/lib64:$libs_dir/jasper-version-2.0.33/lib64:$libs_dir/openjpeg-2.4.0/lib:$libs_dir/eccodes-2.24.0-Source/lib64:$libs_dir/libxml2-2.9.14/lib64"
-                	export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-                	export BINS_PATH="/home/devicon/intel2020.4_install/libs_mpiintel/curl-8.9.1/bin:/opt/intel/intel_2020.4/compilers_and_libraries_2020.4.304/linux/mpi/intel64/bin:/home/devicon/intel2020.4_install/libs_mpiintel/hdf5-1.14.4-3/bin:/home/devicon/intel2020.4_install/libs_mpiintel/netcdf-c-4.9.2/bin:/home/devicon/intel2020.4_install/libs_mpiintel/jasper-version-2.0.33/bin:/home/devicon/intel2020.4_install/libs_mpiintel/openjpeg-2.4.0/bin:/home/devicon/intel2020.4_install/libs_mpiintel/eccodes-2.24.0-Source/bin:."
-                	export PATH=${BINS_PATH}:${anaconda_dir}:$PATH
-
-                	export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0_intel2020.4'
-                	export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-                	export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-                	export MPIBIN_ICONTOOLS="/opt/intel/intel_2020.4/compilers_and_libraries_2020.4.304/linux/mpi/intel64/bin/mpiexec"
-                	export MPIBIN_ICONMODEL="/opt/intel/intel_2020.4/compilers_and_libraries_2020.4.304/linux/mpi/intel64/bin/mpiexec"
-
-			export MODEL_DIR="${install_dir}/Bins-sources_mpiintel/icon-model-release-2024.10-public"
-                	export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.10_intel2020.4_mpiintel_O3" # choose your model version here
-		elif [ "$VERSION" = "2025.04" ];then
-			src_dir=$install_dir/src
-			build_dir=$install_dir/build
-			export MODEL_DIR=$src_dir/icon-model-2025.04
-			export ecradpath="$MODEL_DIR/externals/ecrad/data"
-			export ana_varnames_map_file="$MODEL_DIR/run/ana_varnames_map_file.txt"
-			export latbc_varnames_map_file="$MODEL_DIR/run/dict.latbc"
-			export ECCODES_DEFINITION_PATH="$build_dir/definitions.edzw-2.30.2-1:$src_dir/eccodes-2.30.2-Source/definitions"
-			export LIBS_PATH="$build_dir/zlib-1.3.1/lib:$build_dir/szip-2.1.1/lib64:$I_MPI_ROOT/intel64/lib:$build_dir/hdf5-1.14.4-3/lib64:$build_dir/netcdf-c-4.9.2/lib64:$build_dir/netcdf-fortran-4.6.1/lib64:$build_dir/libaec-v1.1.3/lib64:$build_dir/jasper-version-2.0.33/lib64:$build_dir/openjpeg-2.4.0/lib:$build_dir/eccodes-2.30.2-Source/lib64:$build_dir/libxml2-2.9.14/lib64"
-			export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-			export BINS_PATH="$I_MPI_ROOT/intel64/bin:$build_dir/hdf5-1.14.4-3/bin:$build_dir/netcdf-c-4.9.2/bin:$build_dir/jasper-version-2.0.33/bin:$build_dir/openjpeg-2.4.0/bin:$build_dir/eccodes-2.30.2-Source/bin"
-			export PATH="${BINS_PATH}:${anaconda_dir}:$PATH:."
-			export ICONTOOLS_DIR="$ICONTOOLS_ROOT/dwdicontools_2.6.0_intel2020.4"
-                	export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-                	export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-
-                	export MPIBIN_ICONTOOLS="$I_MPI_ROOT/intel64/bin/mpiexec"
-                	export MPIBIN_ICONMODEL="$I_MPI_ROOT/intel64/bin/mpiexec"
-
-                	export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2025.04_intel2020.4_mpiintel_O3" # choose your model version here
-		else
-			echo Error! Version not found! Choose between $icon_version_list[@].
-			exit 2
-		fi
-
-        elif [ $MPI == "mpich" ];then # entra aqui se arg='mpich'
-		libs_dir="$install_dir/libs_mpich"
-                export ecradpath="${install_dir}/Bins-sources_mpich/icon-model-release-2024.10-public/externals/ecrad/data"
-                export ana_varnames_map_file="${install_dir}/Bins-sources_mpich/icon-model-release-2024.10-public/run/ana_varnames_map_file.txt"
-                export latbc_varnames_map_file="${install_dir}/Bins-sources_mpich/icon-model-release-2024.10-public/run/dict.latbc"
-
-                export ECCODES_DEFINITION_PATH="${libs_dir}/definitions.edzw-2.30.2-1:${libs_dir}/eccodes-2.30.2-Source/share/eccodes/definitions"
-
-                export LIBS_PATH="$libs_dir/zlib-1.3.1/lib:$libs_dir/szip-2.1.1/lib64:${libs_dir}/mpich-4.2.3/lib64:$libs_dir/hdf5-1.14.4-3/lib64:$libs_dir/netcdf-c-4.9.2/lib64:$libs_dir/netcdf-fortran-4.6.1/lib64:$libs_dir/libaec-v1.1.3/lib64:$libs_dir/jasper-version-2.0.33/lib64:$libs_dir/openjpeg-2.4.0/lib:$libs_dir/eccodes-2.30.2-Source/lib64:$libs_dir/libxml2-2.9.14/lib64"
-                export LD_LIBRARY_PATH=${LIBS_PATH}:$LD_LIBRARY_PATH
-                export BINS_PATH="$libs_dir/mpich-4.2.3/bin:${libs_dir}/hdf5-1.14.4-3/bin:${libs_dir}/netcdf-c-4.9.2/bin:${libs_dir}/jasper-version-2.0.33/bin:${libs_dir}/openjpeg-2.4.0/bin:${libs_dir}/eccodes-2.30.2-Source/bin:$PATH:."
-                export PATH=${BINS_PATH}:${anaconda_dir}:$PATH
-
-                export ICONTOOLS_DIR='/home/opicon/operacional/binaries/icontools/dwdicontools_2.6.0_intel2020.4_mpich'
-                export BINARY_ICONSUB="$ICONTOOLS_DIR/iconsub"
-                export BINARY_REMAP="$ICONTOOLS_DIR/iconremap"
-                export MPIBIN_ICONTOOLS="${libs_dir}/mpich-4.2.3/bin/mpiexec"
-
-		export MODEL_DIR="${install_dir}/Bins-sources_mpich/icon-model-release-2024.10-public"
-                export MPIBIN_ICONMODEL="${libs_dir}/mpich-4.2.3/bin/mpiexec"
-                export BINARY_ICONMODEL="$ICONMODEL_DIR/icon_2024.10_intel2020.4_mpich_O3" # choose your model version here
-	else
-		echo Error! $MPI not found.
-		exit 33
-	fi
-
-else
-	echo "Compiler $COMPILER not listed. Try one of the following: ${compiler_list[*]}"
-	exit 22
+if [ -z "${VERSION}" ]; then
+    VERSION="2025.04"
 fi
+
+# ============================================================
+# Validate compiler
+# ============================================================
+
+if [[ ! " ${compiler_list[*]} " =~ " ${COMPILER} " ]]; then
+    #echo "Error: compiler '${COMPILER}' not found."
+    #echo "Available compilers: ${compiler_list[*]}"
+    exit 12
+fi
+
+# ============================================================
+# Validate MPI
+# ============================================================
+
+if [[ ! " ${mpi_list[*]} " =~ " ${MPI} " ]]; then
+    #echo "Error: MPI '${MPI}' not found."
+    #echo "Available MPI: ${mpi_list[*]}"
+    exit 13
+fi
+
+# ============================================================
+# Validate ICON version
+# ============================================================
+
+if [[ ! " ${icon_version_list[*]} " =~ " ${VERSION} " ]]; then
+    #echo "Error: ICON version '${VERSION}' not found."
+    #echo "Available ICON versions: ${icon_version_list[*]}"
+    exit 14
+fi
+
+# ============================================================
+# Common directories
+# ============================================================
+
+export OPERACIONAL_DIR="/home/devicon/operacional"
+
+export ICONMODEL_DIR="${OPERACIONAL_DIR}/binaries/iconmodel"
+export ICONTOOLS_ROOT="${OPERACIONAL_DIR}/binaries/icontools"
+export SCRIPTS_DIR="${OPERACIONAL_DIR}/scripts"
+export DATES_DIR="${OPERACIONAL_DIR}/currentdates"
+
+# ============================================================
+# GCC 14.2.0
+# ============================================================
+
+export GCC_ROOT="/apps/compilers/gcc/gcc14-14.2.0"
+export GCC_WRAPPERS="${GCC_ROOT}/wrappers"
+export GCC_LIB="${GCC_ROOT}/usr/lib64"
+export GCC_LIB_GCC="${GCC_ROOT}/usr/lib64/gcc/x86_64-suse-linux/14"
+
+# ============================================================
+# OpenMPI 5.0.10
+# ============================================================
+
+export OPENMPI_ROOT="/apps/libs/GCC14/openmpi-5.0.10"
+
+# ============================================================
+# Python 3.12.11
+# ============================================================
+
+export PYTHON_ROOT="/apps/python/3.12.11"
+
+# ============================================================
+# AOCL 5.2.0
+# ============================================================
+
+export AOCL_ROOT="/apps/amd/5.2.0/gcc"
+export AOCL_LIB="${AOCL_ROOT}/lib_LP64"
+
+# ============================================================
+# Common environment
+# ============================================================
+
+export PATH="${GCC_WRAPPERS}:${GCC_ROOT}/usr/bin:${PYTHON_ROOT}/bin:${PATH}"
+
+export LD_LIBRARY_PATH="${AOCL_LIB}:${GCC_LIB}:${GCC_LIB_GCC}:${PYTHON_ROOT}/lib:${LD_LIBRARY_PATH-}"
+
+export LIBRARY_PATH="${GCC_LIB}:${GCC_LIB_GCC}:${AOCL_LIB}:${LIBRARY_PATH-}"
+
+# ============================================================
+# GCC 14.2.0 + OpenMPI 5.0.10
+# ============================================================
+
+if [ "${COMPILER}" = "gcc14" ]; then
+
+    # --------------------------------------------------------
+    # GCC
+    # --------------------------------------------------------
+
+    export PATH="${OPENMPI_ROOT}/bin:${PATH}"
+
+    export LD_LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${LD_LIBRARY_PATH}"
+
+    export LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${LIBRARY_PATH}"
+
+    export PKG_CONFIG_PATH="${OPENMPI_ROOT}/lib/pkgconfig:${OPENMPI_ROOT}/lib64/pkgconfig:${PKG_CONFIG_PATH-}"
+
+    export CMAKE_PREFIX_PATH="${OPENMPI_ROOT}:${CMAKE_PREFIX_PATH-}"
+
+    export PYTHONPATH="${OPENMPI_ROOT}/lib/python3.12/site-packages:${OPENMPI_ROOT}/lib64/python3.12/site-packages:${PYTHONPATH-}"
+
+    # --------------------------------------------------------
+    # MPI
+    # --------------------------------------------------------
+
+    if [ "${MPI}" = "openmpi" ]; then
+
+        export CC="mpicc"
+        export CXX="mpicxx"
+        export FC="mpif90"
+
+        export MPI_LAUNCH="${OPENMPI_ROOT}/bin/mpiexec"
+
+    else
+
+        #echo "Error: MPI '${MPI}' is not configured for compiler '${COMPILER}'."
+        #echo "Available configuration: gcc14 + openmpi"
+        exit 15
+
+    fi
+
+    # --------------------------------------------------------
+    # Compiler flags
+    # --------------------------------------------------------
+
+    export CFLAGS="-g1 -march=native -fPIC"
+    export CXXFLAGS="-g1 -march=native -O2 -fPIC"
+
+    export ICON_CFLAGS="-O3"
+    export ICON_BUNDLED_CFLAGS="-O2"
+
+    export CPPFLAGS="-I${OPENMPI_ROOT}/include \
+-I${OPENMPI_ROOT}/include/libxml2"
+
+    export FCFLAGS="-I${OPENMPI_ROOT}/include \
+-fimplicit-none \
+-fmax-identifier-length=63 \
+-fall-intrinsics \
+-fbacktrace \
+-fbounds-check \
+-fstack-protector-all \
+-finit-real=nan \
+-finit-integer=-2147483648 \
+-finit-character=127 \
+-Wall \
+-Wcharacter-truncation \
+-Wunderflow \
+-Wunused-parameter \
+-Wno-surprising \
+-g1 \
+-march=native \
+-fPIC"
+
+    # --------------------------------------------------------
+    # ICON Fortran flags
+    # --------------------------------------------------------
+
+    export ICON_FCFLAGS="-O2 -std=f2008 -fmodule-private"
+
+    export ICON_OCEAN_FCFLAGS="-O3 -fno-tree-loop-vectorize -std=f2008 -fmodule-private"
+    export ICON_OCEAN_PATH="src/hamocc:src/ocean:src/sea_ice"
+
+    export ICON_DACE_FCFLAGS="-O2 -std=f2018 -fmodule-private"
+    export ICON_DACE_PATH="externals/dace"
+
+    export ICON_ECRAD_FCFLAGS="-O2 -fmodule-private"
+    export ICON_SCT_FCFLAGS="-O2 -fmodule-private"
+    export ICON_HD_FCFLAGS="-O2"
+
+    # --------------------------------------------------------
+    # Linker
+    # --------------------------------------------------------
+
+    export LDFLAGS="-L${OPENMPI_ROOT}/lib \
+-L${OPENMPI_ROOT}/lib64 \
+-L${GCC_LIB} \
+-L${GCC_LIB_GCC} \
+-L${AOCL_LIB} \
+-Wl,-rpath,${AOCL_LIB} \
+-Wl,-rpath,${OPENMPI_ROOT}/lib \
+-Wl,-rpath,${OPENMPI_ROOT}/lib64 \
+-Wl,-rpath,${PYTHON_ROOT}/lib \
+-Wl,-rpath,${GCC_LIB} \
+-Wl,-rpath,${GCC_LIB_GCC} \
+-Wl,--disable-new-dtags"
+
+    # --------------------------------------------------------
+    # Libraries
+    # --------------------------------------------------------
+
+    export LIBS="-Wl,--as-needed \
+-leccodes_f90 \
+-leccodes \
+-lnetcdff \
+-lnetcdf \
+-lhdf5_hl_fortran \
+-lhdf5_fortran \
+-lhdf5_hl \
+-lhdf5 \
+-lsz \
+-laec \
+-lxml2 \
+-lz \
+-ldl \
+-lm \
+-lstdc++ \
+-lflame \
+-lblis \
+-lcdi \
+-pthread"
+
+    # --------------------------------------------------------
+    # ICON Tools
+    # --------------------------------------------------------
+
+    export ICONTOOLS_DIR="${ICONTOOLS_ROOT}/dwdicontools_2.6.0"
+
+    export BINARY_ICONSUB="${ICONTOOLS_DIR}/iconsub"
+    export BINARY_REMAP="${ICONTOOLS_DIR}/iconremap"
+
+fi
+
+# ============================================================
+# Intel 2020.4
+# ============================================================
+
+if [ "${COMPILER}" = "intel2020.4" ]; then
+
+    #echo "Intel 2020.4 configuration has not yet been defined."
+    #echo "Please configure the Intel environment before using it."
+
+    exit 16
+
+fi
+
+# ============================================================
+# ICON version
+# ============================================================
+
+case "${VERSION}" in
+
+    2025.04)
+
+        export MODEL_DIR="${OPERACIONAL_DIR}/src/icon-model-2025.04"
+
+        export ecradpath="${MODEL_DIR}/externals/ecrad/data"
+        export ana_varnames_map_file="${MODEL_DIR}/run/ana_varnames_map_file.txt"
+        export latbc_varnames_map_file="${MODEL_DIR}/run/dict.latbc"
+
+        export BINARY_ICONMODEL="${ICONMODEL_DIR}/icon_2025.04_${COMPILER}_${MPI}_O3"
+
+        ;;
+
+    2026.04)
+
+        export MODEL_DIR="${OPERACIONAL_DIR}/src/icon-model-2026.04"
+
+        export ecradpath="${MODEL_DIR}/externals/ecrad/data"
+        export ana_varnames_map_file="${MODEL_DIR}/run/ana_varnames_map_file.txt"
+        export latbc_varnames_map_file="${MODEL_DIR}/run/dict.latbc"
+
+        export BINARY_ICONMODEL="${ICONMODEL_DIR}/icon_2026.04_${COMPILER}_${MPI}_O3"
+
+        ;;
+
+    *)
+
+        #echo "Error: ICON version '${VERSION}' not configured."
+        exit 17
+
+        ;;
+
+esac

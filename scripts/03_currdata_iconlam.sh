@@ -1,45 +1,62 @@
 #!/bin/bash -l
-#
-# Script for generating files with current data in specific
-# formats.
-#
-# Author CT Neris, adapted from 03_ledata_corr.sh (admcosmo)
-# 
-# ---------------------------------------------------------
-# Activating ecflow env
-conda activate ecflow
 
-# Checking args passed
-if [ $# -ne 1 ]; then
-	echo "Enter reference data (00, 12)!!!!!"
-	msg="FATAL ERROR. Entre com a rodada (00, 12)."
-        ecflow_client --label=Info1 "$msg" > /dev/null 2>&1
-        msg="Script abortado em: $(date)"
-        ecflow_client --label=Info2 "$msg" > /dev/null 2>&1
-	exit 11
+# ============================================================
+# Script: 03_currentdate_iconlam.sh
+#
+# Função:
+#   Gera o arquivo com a data corrente da rodada operacional
+#   do ICONLAM.
+#
+# Uso:
+#   $0 HH
+#
+# Exemplos:
+#   $0 00
+#   $0 12
+#
+# Argumentos:
+#   HH - rodada do modelo: 00 ou 12
+#
+# Arquivo gerado:
+#   ${DATES_DIR}/currentdate${HH}
+#
+# Conteúdo:
+#   Data corrente no formato YYYYMMDD.
+#
+# Dependências do ambiente (00_env_vars_iconlam.sh):
+#   DATES_DIR
+#   ecflow_info()
+#   ecflow_event()
+#
+# Eventos ecFlow:
+#   AtuData_SAFO - sinaliza a atualização da data.
+#
+# Retorno:
+#   0  - arquivo gerado com sucesso
+#   2  - erro na geração do arquivo
+#   11 - rodada inválida
+# ============================================================
+
+if [ $# -ne 1 ] || [[ ! "$1" =~ ^(00|12)$ ]]; then
+    ecflow_info "ERROR: Entre com a rodada: 00 ou 12."
+    exit 11
 fi
 
-HH=$1
+HH="$1"
+FILE="${DATES_DIR}/currentdate${HH}"
 
-# ---------------------------------------------------------
-# Cleaning directory
-rm -f /home/opicon/operacional/currentdates/currentdate$HH
+if date +%Y%m%d > "${FILE}"; then
+    CURRENTDATE=$(<"${FILE}")
 
-#  Read and copy 
-date +%Y%m%d > /home/opicon/operacional/currentdates/currentdate$HH
+    ecflow_info \
+        "OK: Data atual da rodada ${HH}: ${CURRENTDATE}." \
+        "Processo finalizado em: $(date)"
 
-echo "Currentdate is `cat /home/opicon/operacional/currentdates/currentdate$HH`!"
-
-if [ $? -eq 0 ]; then
-        msg="OK. Processo finalizado com sucesso! Data atual: `cat /home/opicon/operacional/currentdates/currentdate$HH`"
-        ecflow_client --label=Info1 "$msg" > /dev/null 2>&1
-        msg="Finalizado em: $(date)"
-        ecflow_client --label=Info2 "$msg" > /dev/null 2>&1
-        ecflow_client --event AtuData_SAFO
+    ecflow_event AtuData_SAFO
 else
-        msg="WARNING! Processo finalizado com erros! Data atual: `cat /home/opicon/operacional/currentdates/currentdate$HH`"
-        ecflow_client --label=Info1 "$msg" > /dev/null 2>&1
-        msg="Finalizado em: $(date)"
-        ecflow_client --label=Info2 "$msg" > /dev/null 2>&1
-	exit 2
+    ecflow_info \
+        "ERROR: Não foi possível gerar o arquivo ${FILE}." \
+        "Processo finalizado em: $(date)"
+
+    exit 2
 fi

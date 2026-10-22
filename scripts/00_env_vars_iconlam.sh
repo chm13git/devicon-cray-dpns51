@@ -1,200 +1,489 @@
 #!/bin/bash -l
+
 unset CDPATH
 
-module purge
-module load gcc/gcc14-14.2.0.module
-
 # ============================================================
-# Available configurations
+# Arguments
 # ============================================================
 
-compiler_list=("gcc14" "intel2020.4")
-mpi_list=("openmpi" "mpiintel")
-icon_version_list=("2025.04" "2026.04")
+COMPILER="${1:-}"
+MPI="${2:-openmpi}"
+VERSION="${3:-2025.04}"
+
+[[ -z "${COMPILER}" ]] && exit 11
 
 # ============================================================
-# Retrieve parameters
-#
-# Usage:
-#
-#   ./set_env.sh <compiler>
-#   ./set_env.sh <compiler> <mpi>
-#   ./set_env.sh <compiler> <mpi> <icon_version>
-#
-# Examples:
-#
-#   ./set_env.sh gcc14
-#   ./set_env.sh gcc14 openmpi
-#   ./set_env.sh gcc14 openmpi 2025.04
-# ============================================================
-
-if [ $# -lt 1 ] || [ $# -gt 3 ]; then
-    #echo "Usage:"
-    #echo "  $0 <compiler> [mpi] [icon_version]"
-    #echo
-    #echo "Available compilers:"
-    #echo "  ${compiler_list[*]}"
-    #echo
-    #echo "Available MPI:"
-    #echo "  ${mpi_list[*]}"
-    #echo
-    #echo "Available ICON versions:"
-    #echo "  ${icon_version_list[*]}"
-    exit 11
-fi
-
-COMPILER="$1"
-
-MPI="${2:-}"
-VERSION="${3:-}"
-
-# ============================================================
-# Default configuration
-# ============================================================
-
-if [ -z "${MPI}" ]; then
-    MPI="openmpi"
-fi
-
-if [ -z "${VERSION}" ]; then
-    VERSION="2025.04"
-fi
-
-# ============================================================
-# Validate compiler
-# ============================================================
-
-if [[ ! " ${compiler_list[*]} " =~ " ${COMPILER} " ]]; then
-    #echo "Error: compiler '${COMPILER}' not found."
-    #echo "Available compilers: ${compiler_list[*]}"
-    exit 12
-fi
-
-# ============================================================
-# Validate MPI
-# ============================================================
-
-if [[ ! " ${mpi_list[*]} " =~ " ${MPI} " ]]; then
-    #echo "Error: MPI '${MPI}' not found."
-    #echo "Available MPI: ${mpi_list[*]}"
-    exit 13
-fi
-
-# ============================================================
-# Validate ICON version
-# ============================================================
-
-if [[ ! " ${icon_version_list[*]} " =~ " ${VERSION} " ]]; then
-    #echo "Error: ICON version '${VERSION}' not found."
-    #echo "Available ICON versions: ${icon_version_list[*]}"
-    exit 14
-fi
-
-# ============================================================
-# Common directories
+# Operational directories
 # ============================================================
 
 export OPERACIONAL_DIR="/home/devicon/operacional"
-
 export ICONMODEL_DIR="${OPERACIONAL_DIR}/binaries/iconmodel"
-export ICONTOOLS_ROOT="${OPERACIONAL_DIR}/binaries/icontools"
 export SCRIPTS_DIR="${OPERACIONAL_DIR}/scripts"
 export DATES_DIR="${OPERACIONAL_DIR}/currentdates"
+export ICONTOOLS_DIR="/home/alana/Doutorado/dwd_icon_tools-2.8.2/icontools"
+export ICONTOOLS_LIB="${ICONTOOLS_DIR}/../externals/libcdi/src/.libs"
 
 # ============================================================
-# GCC 14.2.0
+# Domains
 # ============================================================
 
-export GCC_ROOT="/apps/compilers/gcc/gcc14-14.2.0"
-export GCC_WRAPPERS="${GCC_ROOT}/wrappers"
-export GCC_LIB="${GCC_ROOT}/usr/lib64"
-export GCC_LIB_GCC="${GCC_ROOT}/usr/lib64/gcc/x86_64-suse-linux/14"
+declare -A GRID_DIR=(
+    [sam]="sam6.5"
+    [sse]="sse2.1"
+    [ant]="ant6.5"
+    [pen]="pen2.1"
+)
+
+declare -A GRID_FPROG=(
+    [sam]=120
+    [sse]=48
+    [ant]=120
+    [pen]=48
+)
+
+# ------------------------------------------------------------
+# Grid files
+# ------------------------------------------------------------
+
+declare -A GRID_INGRID=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/grid_files/icon_grid_bras_sam_R03B07_20231113_tiles.nc"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/grid_files/icon_grid_bras_sam_R03B07_20231113_tiles.nc"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/grid_files/icon_grid_bras_ant_R03B07_20231113_tiles.nc"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/grid_files/icon_grid_bras_ant_R03B07_20231113_tiles.nc"
+)
+
+declare -A GRID_LOCALGRID=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/grid_files/ICON-SAM6.5_DOM01.nc"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/grid_files/sse2.1_DOM01.nc"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/grid_files/ICONLAM-ANT6.5_DOM01.nc"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/grid_files/ICON-ANT2km_DOM01.nc"
+)
+
+declare -A GRID_EXTPAR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/grid_files/external_parameter_icon_ICON-SAM6.5_DOM01_tiles.nc"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/grid_files/external_parameter_icon_sse2.1_DOM01_tiles.nc"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/grid_files/external_parameter_icon_ICONLAM-ANT6.5_DOM01_tiles.nc"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/grid_files/ICON-ANT2km_DOM01_external_parameter.nc"
+)
+
+declare -A GRID_RADGRID=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/grid_files/ICON-SAM6.5_DOM01.parent.nc"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/grid_files/sse2.1_DOM01.parent.nc"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/grid_files/ICONLAM-ANT6.5_DOM01.parent.nc"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/grid_files/ICON-ANT2km_DOM01.parent.nc"
+)
+
+# ------------------------------------------------------------
+# Templates
+# ------------------------------------------------------------
+
+declare -A GRID_TEMPLATE_IC_IR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/tmpl_create_ic_nml_ir_sam6.5"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/tmpl_create_ic_nml_ir_sse2.1"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/tmpl_create_ic_nml_ir_ant6.5"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/tmpl_create_ic_nml_ir_pen2.1"
+)
+
+declare -A GRID_TEMPLATE_LBC_SUB=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/tmpl_create_lbc_nml_ir_sub_sam6.5"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/tmpl_create_lbc_nml_ir_sub_sse2.1"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/tmpl_create_lbc_nml_ir_sub_ant6.5"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/tmpl_create_lbc_nml_ir_sub_pen2.1"
+)
+
+declare -A GRID_TEMPLATE_LBC_IR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/tmpl_create_lbc_nml_ir_sam6.5"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/tmpl_create_lbc_nml_ir_sse2.1"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/tmpl_create_lbc_nml_ir_ant6.5"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/tmpl_create_lbc_nml_ir_pen2.1"
+)
+
+declare -A GRID_TEMPLATE_ICON=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/const/tmpl_create_icon_nml_sam6.5"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/const/tmpl_create_icon_nml_sse2.1"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/const/tmpl_create_icon_nml_ant6.5"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/const/tmpl_create_icon_nml_pen2.1"
+)
+
+# ------------------------------------------------------------
+# Data directories
+# ------------------------------------------------------------
+
+declare -A GRID_WORKDIR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5"
+    [sse]="${OPERACIONAL_DIR}/sse2.1"
+    [ant]="${OPERACIONAL_DIR}/ant6.5"
+    [pen]="${OPERACIONAL_DIR}/pen2.1"
+)
+
+declare -A GRID_INPUTDATA_DIR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/data/inputdata"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/data/inputdata"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/data/inputdata"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/data/inputdata"
+)
+
+declare -A GRID_INPUTDATAREADY_DIR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/data/inputdataready"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/data/inputdataready"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/data/inputdataready"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/data/inputdataready"
+)
+
+declare -A GRID_INITIALCOND_DIR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/data/initialcond"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/data/initialcond"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/data/initialcond"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/data/initialcond"
+)
+
+declare -A GRID_OUTPUTDATA_DIR=(
+    [sam]="${OPERACIONAL_DIR}/sam6.5/data/outputdata"
+    [sse]="${OPERACIONAL_DIR}/sse2.1/data/outputdata"
+    [ant]="${OPERACIONAL_DIR}/ant6.5/data/outputdata"
+    [pen]="${OPERACIONAL_DIR}/pen2.1/data/outputdata"
+)
+
+# ------------------------------------------------------------
+# Output characteristics
+# ------------------------------------------------------------
+
+declare -A GRID_NVARML=(
+    [sam]=34
+    [sse]=33
+    [ant]=33
+    [pen]=26
+)
+
+declare -A GRID_NVARPL=(
+    [sam]=104
+    [sse]=48
+    [ant]=104
+    [pen]=48
+)
+
+declare -A GRID_PROG_INT=(
+    [sam]=3
+    [sse]=1
+    [ant]=3
+    [pen]=1
+)
 
 # ============================================================
-# OpenMPI 5.0.10
+# Backup
 # ============================================================
 
-export OPENMPI_ROOT="/apps/libs/GCC14/openmpi-5.0.10"
+BACKUP_RSYNC_HOST="admbackup@dpns42"
+
+declare -A GRID_BACKUP_DIR=(
+    [sam]="/data2/backup/backup_icon/bkp_output_iconlam/sam"
+    [sse]="/data2/backup/backup_icon/bkp_output_iconlam/sse"
+    [ant]="/data2/backup/backup_icon/bkp_output_iconlam/ant"
+    [pen]="/data2/backup/backup_icon/bkp_output_iconlam/pen"
+)
+
+declare -A GRID_BACKUP_MIN_GRIB=(
+    [sam]=4437829451
+    [sse]=4400000000
+    [ant]=805176483
+    [pen]=680000000
+)
+
+declare -A GRID_BACKUP_MIN_VRF_ML=(
+    [sam]=7170221808
+    [sse]=2240940896
+    [ant]=3280924848
+    [pen]=400532088
+)
+
+declare -A GRID_BACKUP_MIN_VRF_PL=(
+    [sam]=13680028264
+    [sse]=4270016624
+    [ant]=6260677544
+    [pen]=763023444
+)
+
+declare -A GRID_BACKUP_MIN_VRF=(
+    [sam]=20807229908
+    [sse]=6510140060
+    [ant]=9540586708
+    [pen]=1160746812
+)
+
+declare -A GRID_BACKUP_MIN_WAVE=(
+    [sam]=125000000
+    [sse]=2000000
+    [ant]=2000000
+    [pen]=0
+)
+
+declare -A GRID_BACKUP_MIN_WAVE_PS=(
+    [sam]=400000
+    [sse]=0
+    [ant]=0
+    [pen]=0
+)
+
+declare -A GRID_HAS_WAVE=(
+    [sam]=1
+    [sse]=1
+    [ant]=1
+    [pen]=0
+)
+
+declare -A GRID_HAS_WAVE_PS=(
+    [sam]=1
+    [sse]=0
+    [ant]=0
+    [pen]=0
+)
+# ============================================================
+# Aliases
+# ============================================================
+
+for GRID in sam sse ant pen; do
+    alias "icondata${GRID}00"="ls -ltrh ${GRID_INPUTDATA_DIR[$GRID]}00/"
+    alias "icondata${GRID}12"="ls -ltrh ${GRID_INPUTDATA_DIR[$GRID]}12/"
+
+    alias "init${GRID}00"="ls -ltrh ${GRID_INITIALCOND_DIR[$GRID]}00/"
+    alias "init${GRID}12"="ls -ltrh ${GRID_INITIALCOND_DIR[$GRID]}12/"
+
+    alias "inputready${GRID}00"="ls -ltrh ${GRID_INPUTDATAREADY_DIR[$GRID]}00/"
+    alias "inputready${GRID}12"="ls -ltrh ${GRID_INPUTDATAREADY_DIR[$GRID]}12/"
+
+    alias "out${GRID}00"="ls -ltrh --full-time ${GRID_OUTPUTDATA_DIR[$GRID]}00/"
+    alias "out${GRID}12"="ls -ltrh --full-time ${GRID_OUTPUTDATA_DIR[$GRID]}12/"
+done
+
+alias nodes_icon="ls -ltr ${OPERACIONAL_DIR}/*/const/icon_model_nodes.txt"
 
 # ============================================================
-# Python 3.12.11
+# Common functions
 # ============================================================
 
-export PYTHON_ROOT="/apps/python/3.12.11"
+# Exibe mensagens no terminal e tenta atualizar os rótulos do ecFlow.
+# A indisponibilidade do ecFlow não afeta o processamento.
+ecflow_info()
+{
+    local MSG_INFO1="$1"
+    local MSG_INFO2="${2:-Data/Hora: $(date)}"
+
+    echo "${MSG_INFO1}"
+    command -v ecflow_client >/dev/null 2>&1 || return 0
+
+    ecflow_client --label=Info1 "${MSG_INFO1}" >/dev/null 2>&1 || true
+    ecflow_client --label=Info2 "${MSG_INFO2}" >/dev/null 2>&1 || true
+    return 0
+}
+
+# Envia um evento ao ecFlow, sem tornar sua indisponibilidade fatal.
+ecflow_event()
+{
+    command -v ecflow_client >/dev/null 2>&1 || return 0
+    ecflow_client --event "$1" >/dev/null 2>&1 || true
+    return 0
+}
+
+log_icon()
+{
+    tail -f "${SCRIPTS_DIR}/logs/05_${1}_${2}_$(cat "${DATES_DIR}/currentdate${1}")_ope.log"
+}
+
+check_file_size()
+{
+    local FILE="$1"
+    local REFERENCE="$2"
+    local OP="$3"
+    local DESCRIPTION="$4"
+    local SIZE
+
+    if [ -f "${FILE}" ]; then
+        SIZE=$(stat -c %s "${FILE}")
+    else
+        ecflow_info \
+            "WAIT: ${DESCRIPTION} | Arquivo: ${FILE} | Status: NÃO EXISTE | Referência: ${OP} ${REFERENCE} bytes"
+        return 1
+    fi
+
+    case "${OP}" in
+        ge)
+            if [ "${SIZE}" -ge "${REFERENCE}" ]; then
+                ecflow_info \
+                    "OK: ${DESCRIPTION} | Arquivo: ${FILE} | Tamanho: ${SIZE} bytes | Referência: >= ${REFERENCE} bytes"
+                return 0
+            fi
+            ;;
+        gt)
+            if [ "${SIZE}" -gt "${REFERENCE}" ]; then
+                ecflow_info \
+                    "OK: ${DESCRIPTION} | Arquivo: ${FILE} | Tamanho: ${SIZE} bytes | Referência: > ${REFERENCE} bytes"
+                return 0
+            fi
+            ;;
+        *)
+            ecflow_info \
+                "ERROR: Operador inválido '${OP}'. Valores aceitos: ge ou gt."
+            return 1
+            ;;
+    esac
+
+    ecflow_info \
+        "WAIT: ${DESCRIPTION} | Arquivo: ${FILE} | Tamanho: ${SIZE} bytes | Referência: ${OP} ${REFERENCE} bytes"
+    return 1
+}
+
+
+check_remote_file_size()
+{
+    local FILE="$1"
+    local REFERENCE="$2"
+    local OP="$3"
+    local DESCRIPTION="$4"
+    local SIZE
+
+    SIZE=$(ssh -o BatchMode=yes \
+                -o ConnectTimeout=10 \
+                "${BACKUP_RSYNC_HOST}" \
+                stat -c %s -- "${FILE}" 2>/dev/null)
+
+    if [ -z "${SIZE}" ]; then
+        ecflow_info \
+            "WAIT: ${DESCRIPTION} | Arquivo: ${BACKUP_RSYNC_HOST}:${FILE} | Status: NÃO EXISTE | Referência: ${OP} ${REFERENCE} bytes"
+        return 1
+    fi
+
+    case "${OP}" in
+        ge)
+            if [ "${SIZE}" -ge "${REFERENCE}" ]; then
+                ecflow_info \
+                    "OK: ${DESCRIPTION} | Arquivo: ${BACKUP_RSYNC_HOST}:${FILE} | Tamanho: ${SIZE} bytes | Referência: >= ${REFERENCE} bytes"
+                return 0
+            fi
+            ;;
+        gt)
+            if [ "${SIZE}" -gt "${REFERENCE}" ]; then
+                ecflow_info \
+                    "OK: ${DESCRIPTION} | Arquivo: ${BACKUP_RSYNC_HOST}:${FILE} | Tamanho: ${SIZE} bytes | Referência: > ${REFERENCE} bytes"
+                return 0
+            fi
+            ;;
+        *)
+            ecflow_info \
+                "ERROR: Operador inválido '${OP}'. Valores aceitos: ge ou gt."
+            return 1
+            ;;
+    esac
+
+    ecflow_info \
+        "WAIT: ${DESCRIPTION} | Arquivo: ${BACKUP_RSYNC_HOST}:${FILE} | Tamanho: ${SIZE} bytes | Referência: ${OP} ${REFERENCE} bytes"
+    return 1
+}
+
+# GRIB2 validation helpers for 04 preprocessing scripts: 
+# set_tmp_grib_output
+# validate_publish_grib
+set_tmp_grib_output()
+{
+    local NML="$1"
+    [ -f "${NML}" ] || { ecflow_info "ERROR: Namelist não encontrado: ${NML}."; return 1; }
+    sed -i -E "/^[[:space:]]*out_filename[[:space:]]*=/ {
+        s/\.tmp\.grb2(['\"])/\.grb2\1/g
+        s/\.grb2(['\"])/\.tmp\.grb2\1/
+    }" "${NML}" || return 1
+    grep -Eq "^[[:space:]]*out_filename[[:space:]]*=.*\.tmp\.grb2['\"]" "${NML}" || {
+        ecflow_info "ERROR: Não foi possível configurar saída temporária em ${NML}."
+        return 1
+    }
+}
+
+validate_publish_grib()
+{
+    local FINAL="$1" EXPECTED="$2" TMP="" COUNT="" GRIB_COUNT
+    if [ -f "${FINAL%.grb2}.tmp.grb2" ]; then
+        TMP="${FINAL%.grb2}.tmp.grb2"
+    elif [ -f "${FINAL}.tmp" ]; then
+        TMP="${FINAL}.tmp"
+    elif [ -f "${FINAL%.grb2}.tmp" ]; then
+        TMP="${FINAL%.grb2}.tmp"
+    else
+        ecflow_info "ERROR: Arquivo GRIB2 temporário não encontrado para ${FINAL}."
+        return 1
+    fi
+    GRIB_COUNT=$(command -v grib_count 2>/dev/null)
+    if [ -z "${GRIB_COUNT}" ] || [ ! -x "${GRIB_COUNT}" ]; then
+        ecflow_info "ERROR: grib_count não encontrado; arquivo mantido: ${TMP}."
+        return 1
+    fi
+    COUNT=$("${GRIB_COUNT}" "${TMP}" 2>&1) || {
+        ecflow_info "ERROR: grib_count falhou para ${TMP}: ${COUNT}"
+        return 1
+    }
+    COUNT=$(printf '%s\n' "${COUNT}" | awk 'NF {value=$NF} END {print value}')
+    if [[ ! "${COUNT}" =~ ^[0-9]+$ ]]; then
+        ecflow_info "ERROR: Resultado inválido do grib_count para ${TMP}: ${COUNT}."
+        return 1
+    fi
+    echo "Validação GRIB2: ${TMP} -> ${COUNT} mensagens (esperado: ${EXPECTED})."
+    if [ "${COUNT}" != "${EXPECTED}" ]; then
+        ecflow_info "ERROR: ${TMP} contém ${COUNT} mensagens; esperado: ${EXPECTED}. Arquivo final preservado."
+        return 1
+    fi
+    mv -f -- "${TMP}" "${FINAL}" || { ecflow_info "ERROR: Falha ao publicar ${FINAL}."; return 1; }
+    ecflow_info "GRIB2 validado e publicado: ${FINAL} (${COUNT} mensagens)."
+}
+# ============================================================
+# Other executables
+# ============================================================
+
+export PBZIP2="/apps/pbzip2/pbzip2-1.1.13/bin/pbzip2"
 
 # ============================================================
-# AOCL 5.2.0
+# Compiler / MPI
 # ============================================================
 
-export AOCL_ROOT="/apps/amd/5.2.0/gcc"
-export AOCL_LIB="${AOCL_ROOT}/lib_LP64"
+case "${COMPILER}" in
 
-# ============================================================
-# Common environment
-# ============================================================
+    gcc14)
 
-export PATH="${GCC_WRAPPERS}:${GCC_ROOT}/usr/bin:${PYTHON_ROOT}/bin:${PATH}"
+        [[ "${MPI}" = "openmpi" ]] || exit 15
 
-export LD_LIBRARY_PATH="${AOCL_LIB}:${GCC_LIB}:${GCC_LIB_GCC}:${PYTHON_ROOT}/lib:${LD_LIBRARY_PATH-}"
+        export GCC_ROOT="/apps/compilers/gcc/gcc14-14.2.0"
+        export OPENMPI_ROOT="/apps/libs/GCC14/openmpi-5.0.10"
+        export PYTHON_ROOT="/apps/python/3.12.11"
+        export AOCL_ROOT="/apps/amd/5.2.0/gcc"
 
-export LIBRARY_PATH="${GCC_LIB}:${GCC_LIB_GCC}:${AOCL_LIB}:${LIBRARY_PATH-}"
-
-# ============================================================
-# GCC 14.2.0 + OpenMPI 5.0.10
-# ============================================================
-
-if [ "${COMPILER}" = "gcc14" ]; then
-
-    # --------------------------------------------------------
-    # GCC
-    # --------------------------------------------------------
-
-    export PATH="${OPENMPI_ROOT}/bin:${PATH}"
-
-    export LD_LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${LD_LIBRARY_PATH}"
-
-    export LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${LIBRARY_PATH}"
-
-    export PKG_CONFIG_PATH="${OPENMPI_ROOT}/lib/pkgconfig:${OPENMPI_ROOT}/lib64/pkgconfig:${PKG_CONFIG_PATH-}"
-
-    export CMAKE_PREFIX_PATH="${OPENMPI_ROOT}:${CMAKE_PREFIX_PATH-}"
-
-    export PYTHONPATH="${OPENMPI_ROOT}/lib/python3.12/site-packages:${OPENMPI_ROOT}/lib64/python3.12/site-packages:${PYTHONPATH-}"
-
-    # --------------------------------------------------------
-    # MPI
-    # --------------------------------------------------------
-
-    if [ "${MPI}" = "openmpi" ]; then
+        export GCC_LIB="${GCC_ROOT}/usr/lib64"
+        export GCC_LIB_GCC="${GCC_ROOT}/usr/lib64/gcc/x86_64-suse-linux/14"
+        export AOCL_LIB="${AOCL_ROOT}/lib_LP64"
 
         export CC="mpicc"
         export CXX="mpicxx"
         export FC="mpif90"
-
         export MPI_LAUNCH="${OPENMPI_ROOT}/bin/mpiexec"
 
-    else
+        export PATH="${OPENMPI_ROOT}/bin:${GCC_ROOT}/wrappers:${GCC_ROOT}/usr/bin:${PYTHON_ROOT}/bin:/apps/nco/5.3.9/bin:${PATH}"
 
-        #echo "Error: MPI '${MPI}' is not configured for compiler '${COMPILER}'."
-        #echo "Available configuration: gcc14 + openmpi"
-        exit 15
+        export LD_LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${AOCL_LIB}:${GCC_LIB}:${GCC_LIB_GCC}:${PYTHON_ROOT}/lib:${LD_LIBRARY_PATH-}"
 
-    fi
+        export LIBRARY_PATH="${OPENMPI_ROOT}/lib:${OPENMPI_ROOT}/lib64:${AOCL_LIB}:${GCC_LIB}:${GCC_LIB_GCC}:${LIBRARY_PATH-}"
 
-    # --------------------------------------------------------
-    # Compiler flags
-    # --------------------------------------------------------
+        export PKG_CONFIG_PATH="${OPENMPI_ROOT}/lib/pkgconfig:${OPENMPI_ROOT}/lib64/pkgconfig:${PKG_CONFIG_PATH-}"
 
-    export CFLAGS="-g1 -march=native -fPIC"
-    export CXXFLAGS="-g1 -march=native -O2 -fPIC"
+        export CMAKE_PREFIX_PATH="${OPENMPI_ROOT}:${CMAKE_PREFIX_PATH-}"
 
-    export ICON_CFLAGS="-O3"
-    export ICON_BUNDLED_CFLAGS="-O2"
+        export PYTHONPATH="${OPENMPI_ROOT}/lib/python3.12/site-packages:${OPENMPI_ROOT}/lib64/python3.12/site-packages:${PYTHONPATH-}"
 
-    export CPPFLAGS="-I${OPENMPI_ROOT}/include \
--I${OPENMPI_ROOT}/include/libxml2"
+	export ECCODES_DEFINITION_PATH="/apps/libs/GCC14/openmpi-5.0.10/definitions.edzw-2.47.0-1:/apps/libs/GCC14/openmpi-5.0.10/eccodes-2.47.0/share/eccodes/definitions"
 
-    export FCFLAGS="-I${OPENMPI_ROOT}/include \
+        export CFLAGS="-g1 -march=native -fPIC"
+        export CXXFLAGS="-g1 -march=native -O2 -fPIC"
+
+        export ICON_CFLAGS="-O3"
+        export ICON_BUNDLED_CFLAGS="-O2"
+
+        export CPPFLAGS="-I${OPENMPI_ROOT}/include -I${OPENMPI_ROOT}/include/libxml2"
+
+        export FCFLAGS="-I${OPENMPI_ROOT}/include \
 -fimplicit-none \
 -fmax-identifier-length=63 \
 -fall-intrinsics \
@@ -213,27 +502,18 @@ if [ "${COMPILER}" = "gcc14" ]; then
 -march=native \
 -fPIC"
 
-    # --------------------------------------------------------
-    # ICON Fortran flags
-    # --------------------------------------------------------
+        export ICON_FCFLAGS="-O2 -std=f2008 -fmodule-private"
+        export ICON_OCEAN_FCFLAGS="-O3 -fno-tree-loop-vectorize -std=f2008 -fmodule-private"
+        export ICON_OCEAN_PATH="src/hamocc:src/ocean:src/sea_ice"
 
-    export ICON_FCFLAGS="-O2 -std=f2008 -fmodule-private"
+        export ICON_DACE_FCFLAGS="-O2 -std=f2018 -fmodule-private"
+        export ICON_DACE_PATH="externals/dace"
 
-    export ICON_OCEAN_FCFLAGS="-O3 -fno-tree-loop-vectorize -std=f2008 -fmodule-private"
-    export ICON_OCEAN_PATH="src/hamocc:src/ocean:src/sea_ice"
+        export ICON_ECRAD_FCFLAGS="-O2 -fmodule-private"
+        export ICON_SCT_FCFLAGS="-O2 -fmodule-private"
+        export ICON_HD_FCFLAGS="-O2"
 
-    export ICON_DACE_FCFLAGS="-O2 -std=f2018 -fmodule-private"
-    export ICON_DACE_PATH="externals/dace"
-
-    export ICON_ECRAD_FCFLAGS="-O2 -fmodule-private"
-    export ICON_SCT_FCFLAGS="-O2 -fmodule-private"
-    export ICON_HD_FCFLAGS="-O2"
-
-    # --------------------------------------------------------
-    # Linker
-    # --------------------------------------------------------
-
-    export LDFLAGS="-L${OPENMPI_ROOT}/lib \
+        export LDFLAGS="-L${OPENMPI_ROOT}/lib \
 -L${OPENMPI_ROOT}/lib64 \
 -L${GCC_LIB} \
 -L${GCC_LIB_GCC} \
@@ -246,11 +526,7 @@ if [ "${COMPILER}" = "gcc14" ]; then
 -Wl,-rpath,${GCC_LIB_GCC} \
 -Wl,--disable-new-dtags"
 
-    # --------------------------------------------------------
-    # Libraries
-    # --------------------------------------------------------
-
-    export LIBS="-Wl,--as-needed \
+        export LIBS="-Wl,--as-needed \
 -leccodes_f90 \
 -leccodes \
 -lnetcdff \
@@ -271,29 +547,18 @@ if [ "${COMPILER}" = "gcc14" ]; then
 -lcdi \
 -pthread"
 
-    # --------------------------------------------------------
-    # ICON Tools
-    # --------------------------------------------------------
+	export BINARY_ICONSUB="${ICONTOOLS_DIR}/iconsub"
+	export BINARY_REMAP="${ICONTOOLS_DIR}/iconremap"
+        ;;
 
-    export ICONTOOLS_DIR="${ICONTOOLS_ROOT}/dwdicontools_2.6.0"
+    intel2020.4)
+        exit 16
+        ;;
 
-    export BINARY_ICONSUB="${ICONTOOLS_DIR}/iconsub"
-    export BINARY_REMAP="${ICONTOOLS_DIR}/iconremap"
-
-fi
-
-# ============================================================
-# Intel 2020.4
-# ============================================================
-
-if [ "${COMPILER}" = "intel2020.4" ]; then
-
-    #echo "Intel 2020.4 configuration has not yet been defined."
-    #echo "Please configure the Intel environment before using it."
-
-    exit 16
-
-fi
+    *)
+        exit 12
+        ;;
+esac
 
 # ============================================================
 # ICON version
@@ -301,35 +566,18 @@ fi
 
 case "${VERSION}" in
 
-    2025.04)
+    2025.04|2026.04)
 
-        export MODEL_DIR="${OPERACIONAL_DIR}/src/icon-model-2025.04"
-
-        export ecradpath="${MODEL_DIR}/externals/ecrad/data"
-        export ana_varnames_map_file="${MODEL_DIR}/run/ana_varnames_map_file.txt"
-        export latbc_varnames_map_file="${MODEL_DIR}/run/dict.latbc"
-
-        export BINARY_ICONMODEL="${ICONMODEL_DIR}/icon_2025.04_${COMPILER}_${MPI}_O3"
-
-        ;;
-
-    2026.04)
-
-        export MODEL_DIR="${OPERACIONAL_DIR}/src/icon-model-2026.04"
+        export MODEL_DIR="/home/alana/Doutorado/icon-model-git"
 
         export ecradpath="${MODEL_DIR}/externals/ecrad/data"
         export ana_varnames_map_file="${MODEL_DIR}/run/ana_varnames_map_file.txt"
         export latbc_varnames_map_file="${MODEL_DIR}/run/dict.latbc"
 
-        export BINARY_ICONMODEL="${ICONMODEL_DIR}/icon_2026.04_${COMPILER}_${MPI}_O3"
-
+        export BINARY_ICONMODEL="${ICONMODEL_DIR}/icon_${VERSION}_${COMPILER}_${MPI}_O3"
         ;;
 
     *)
-
-        #echo "Error: ICON version '${VERSION}' not configured."
-        exit 17
-
+        exit 14
         ;;
-
 esac

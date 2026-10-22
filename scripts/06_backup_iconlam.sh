@@ -1,4 +1,4 @@
-#!/bin/bash -lx
+#!/bin/bash -l
 
 ############################################################
 # Script to compress the ICONLAM data and save it to backup.
@@ -32,99 +32,11 @@ backup_iconlam()
     RSYNC_BKPDIR="${BACKUP_RSYNC_HOST}:${BKPDIR}"
 
     # --------------------------------------------------------
-    # Report message both on screen and in ecFlow
-    # --------------------------------------------------------
-    report()
-    {
-        echo "$1"
-        ecflow_info "$1"
-    }
-
-    # --------------------------------------------------------
-    # Check file size against reference value.
-    # Usage:
-    #   check_file_size FILE REFERENCE OP DESCRIPTION
-    #
-    # OP:
-    #   ge -> size >= reference
-    #   gt -> size >  reference
-    # --------------------------------------------------------
-    check_file_size()
-    {
-        local FILE="$1"
-        local REFERENCE="$2"
-        local OP="$3"
-        local DESCRIPTION="$4"
-        local SIZE
-
-        if [ -f "${FILE}" ]; then
-            SIZE=$(stat -c %s "${FILE}")
-        else
-            report "WAIT: ${DESCRIPTION}"
-            report "      Arquivo: ${FILE}"
-            report "      Status : NÃO EXISTE"
-            report "      Referência: ${OP} ${REFERENCE} bytes"
-            return 1
-        fi
-
-        case "${OP}" in
-            ge)
-                if [ "${SIZE}" -ge "${REFERENCE}" ]; then
-                    report "OK: ${DESCRIPTION}"
-                    report "    Arquivo: ${FILE}"
-                    report "    Tamanho: ${SIZE} bytes"
-                    report "    Referência: >= ${REFERENCE} bytes"
-                    return 0
-                fi
-                ;;
-            gt)
-                if [ "${SIZE}" -gt "${REFERENCE}" ]; then
-                    report "OK: ${DESCRIPTION}"
-                    report "    Arquivo: ${FILE}"
-                    report "    Tamanho: ${SIZE} bytes"
-                    report "    Referência: > ${REFERENCE} bytes"
-                    return 0
-                fi
-                ;;
-        esac
-
-        report "WAIT: ${DESCRIPTION}"
-        report "      Arquivo: ${FILE}"
-        report "      Tamanho: ${SIZE} bytes"
-        report "      Referência: ${OP} ${REFERENCE} bytes"
-        return 1
-    }
-
-    # --------------------------------------------------------
-    # ecFlow helpers
-    # --------------------------------------------------------
-    ecflow_info()
-    {
-        if command -v ecflow_client >/dev/null 2>&1; then
-            ecflow_client --label=Info1 "$1" >/dev/null 2>&1
-        fi
-    }
-
-    ecflow_info2()
-    {
-        if command -v ecflow_client >/dev/null 2>&1; then
-            ecflow_client --label=Info2 "$1" >/dev/null 2>&1
-        fi
-    }
-
-    ecflow_event()
-    {
-        if command -v ecflow_client >/dev/null 2>&1; then
-            ecflow_client --event "$1" >/dev/null 2>&1
-        fi
-    }
-
-    # --------------------------------------------------------
     # Check pbzip2
     # --------------------------------------------------------
     if [ ! -x "${PBZIP2}" ]; then
-        report "ERROR: pbzip2 não encontrado ou não executável:"
-        report "       ${PBZIP2}"
+        ecflow_info \
+            "ERROR: pbzip2 não encontrado ou não executável: ${PBZIP2}"
         return 1
     fi
 
@@ -134,7 +46,12 @@ backup_iconlam()
     echo "Backup directory: ${BKPDIR}"
     echo
     echo "Entering ${OUTDIR}..."
-    cd ${OUTDIR}
+
+    cd "${OUTDIR}" || {
+        ecflow_info \
+            "ERROR: Não foi possível acessar o diretório de saída: ${OUTDIR}"
+        return 1
+    }
 
     while [ "${ATTEMPT}" -le "${NMAX}" ]; do
 
@@ -144,8 +61,8 @@ backup_iconlam()
         echo "Cycle ${ATTEMPT} of ${NMAX}"
         echo "============================================================"
 
-        ecflow_info "Checando arquivos de backup - ciclo ${ATTEMPT}/${NMAX}."
-        ecflow_info2 "Data/Hora: $(date)"
+        ecflow_info \
+            "Checando arquivos de backup - ciclo ${ATTEMPT}/${NMAX}."
 
         # =====================================================
         # VRF
@@ -177,7 +94,8 @@ backup_iconlam()
             ge \
             "VRF PL pronto"; then
 
-            report "VRF ML e PL atendem aos critérios. Fazendo merge..."
+            ecflow_info \
+                "VRF ML e PL atendem aos critérios. Fazendo merge..."
 
             cp -f "${OUTDIR}/${VRFML}" "${OUTDIR}/${VRFTEMP}"
 
@@ -191,21 +109,30 @@ backup_iconlam()
 
                     mv "${OUTDIR}/${VRFTEMP}" "${OUTDIR}/${VRF}"
 
-                    report "OK: Merge dos arquivos VRF concluído com sucesso."
+                    ecflow_info \
+                        "OK: Merge dos arquivos VRF concluído com sucesso."
+
                     ecflow_event Backup_SAFO
+
                 else
-                    report "WARNING: VRF temporário após merge não atingiu o tamanho mínimo."
+                    ecflow_info \
+                        "WARNING: VRF temporário após merge não atingiu o tamanho mínimo."
+
                     rm -f "${OUTDIR}/${VRFTEMP}"
                 fi
 
             else
-                report "WARNING: ncks falhou durante o merge dos arquivos VRF."
+                ecflow_info \
+                    "WARNING: ncks falhou durante o merge dos arquivos VRF."
+
                 rm -f "${OUTDIR}/${VRFTEMP}"
             fi
 
         else
-            report "WAIT: Arquivos VRF ML/PL ainda não atendem aos critérios."
+            ecflow_info \
+                "WAIT: Arquivos VRF ML/PL ainda não atendem aos critérios."
         fi
+
 
         # =====================================================
         # Atmospheric GRIB backup
@@ -219,7 +146,7 @@ backup_iconlam()
         echo
         echo "---------------- Atmospheric GRIB ----------------"
 
-        if check_file_size \
+        if check_remote_file_size \
             "${BKPDIR}/${ATM_ARCHIVE}" \
             "${MIN_GRIB}" \
             gt \
@@ -228,39 +155,51 @@ backup_iconlam()
             :
 
         else
-            report "GRIB atmosféricos: ${NUMFILES} arquivos encontrados; ${REFNUMFILES} esperados."
+            ecflow_info \
+                "GRIB atmosféricos: ${NUMFILES} arquivos encontrados; ${REFNUMFILES} esperados."
 
             if [ "${NUMFILES}" -eq "${REFNUMFILES}" ]; then
 
-                report "OK: Quantidade de arquivos GRIB atende ao esperado."
-                report "    Iniciando compressão e sincronização."
+                ecflow_info \
+                    "OK: Quantidade de arquivos GRIB atende ao esperado."
 
-                ecflow_info2 "Comprimindo ${NUMFILES} arquivos GRIB."
+                ecflow_info \
+                    "Iniciando compressão e sincronização."
+
+                ecflow_info \
+                    "Comprimindo ${NUMFILES} arquivos GRIB."
 
                 tar --use-compress-program="${PBZIP2}" \
                     -cf "${OUTDIR}/${ATM_ARCHIVE}" \
-                    -C "${OUTDIR}" "${FILEPRE}_${DATE}"_???_??.grb
+                    -C "${OUTDIR}" \
+                    "${FILEPRE}_${DATE}"_???_??.grb
 
-                rsync -av "${OUTDIR}/${ATM_ARCHIVE}" "${RSYNC_BKPDIR}/"
+                rsync -av \
+                    "${OUTDIR}/${ATM_ARCHIVE}" \
+                    "${RSYNC_BKPDIR}/"
 
-                if check_file_size \
+                if check_remote_file_size \
                     "${BKPDIR}/${ATM_ARCHIVE}" \
                     "${MIN_GRIB}" \
                     gt \
                     "Backup atmosférico após sincronização"; then
 
-                    report "OK: Backup atmosférico concluído com sucesso."
+                    ecflow_info \
+                        "OK: Backup atmosférico concluído com sucesso."
+
                     ecflow_event Backup_SAFO
+
                 else
-                    report "WARNING: Verificação do backup atmosférico falhou."
+                    ecflow_info \
+                        "WARNING: Verificação do backup atmosférico falhou."
                 fi
 
             else
-                report "WAIT: Quantidade de arquivos GRIB ainda não está completa."
-                report "      Encontrados: ${NUMFILES}"
-                report "      Esperados  : ${REFNUMFILES}"
+                ecflow_info \
+                    "WAIT: Quantidade de arquivos GRIB ainda não está completa. Encontrados: ${NUMFILES}. Esperados: ${REFNUMFILES}."
             fi
         fi
+
 
         # =====================================================
         # Delft / wave backup
@@ -278,12 +217,12 @@ backup_iconlam()
                 local WAVE_PS="iconlam_${GRID}_${HH}_${DATE}_delft_ps.nc"
                 local WAVE_PS_ARCHIVE="${FILEPRE}_wave_ps_${DATE}.tar.bz2"
 
-                if check_file_size \
+                if check_remote_file_size \
                     "${BKPDIR}/${WAVE_ARCHIVE}" \
                     "${MIN_WAVE}" \
                     gt \
                     "Backup Wave já existente" &&
-                   check_file_size \
+                   check_remote_file_size \
                     "${BKPDIR}/${WAVE_PS_ARCHIVE}" \
                     "${MIN_WAVE_PS}" \
                     gt \
@@ -302,37 +241,43 @@ backup_iconlam()
                     ge \
                     "Arquivo Wave PS de entrada"; then
 
-                    report "Wave e Wave PS encontrados. Comprimindo e sincronizando..."
+                    ecflow_info \
+                        "Wave e Wave PS encontrados. Comprimindo e sincronizando..."
 
                     tar --use-compress-program="${PBZIP2}" \
                         -cf "${OUTDIR}/${WAVE_ARCHIVE}" \
-                        -C "${OUTDIR}" "${WAVE}"
+                        -C "${OUTDIR}" \
+                        "${WAVE}"
 
                     tar --use-compress-program="${PBZIP2}" \
                         -cf "${OUTDIR}/${WAVE_PS_ARCHIVE}" \
-                        -C "${OUTDIR}" "${WAVE_PS}"
+                        -C "${OUTDIR}" \
+                        "${WAVE_PS}"
 
-                    rsync -av "${OUTDIR}/${WAVE_ARCHIVE}" \
+                    rsync -av \
+                        "${OUTDIR}/${WAVE_ARCHIVE}" \
                         "${OUTDIR}/${WAVE_PS_ARCHIVE}" \
                         "${RSYNC_BKPDIR}/"
 
-                    if check_file_size \
+                    if check_remote_file_size \
                         "${BKPDIR}/${WAVE_ARCHIVE}" \
                         "${MIN_WAVE}" \
                         gt \
                         "Backup Wave após sincronização" &&
-                       check_file_size \
+                       check_remote_file_size \
                         "${BKPDIR}/${WAVE_PS_ARCHIVE}" \
                         "${MIN_WAVE_PS}" \
                         gt \
                         "Backup Wave PS após sincronização"; then
 
-                        report "OK: Backup Wave concluído com sucesso."
+                        ecflow_info \
+                            "OK: Backup Wave concluído com sucesso."
+
                         ecflow_event Backup_SAFO
                     fi
                 fi
 
-            elif check_file_size \
+            elif check_remote_file_size \
                 "${BKPDIR}/${WAVE_ARCHIVE}" \
                 "${MIN_WAVE}" \
                 gt \
@@ -346,26 +291,32 @@ backup_iconlam()
                 ge \
                 "Arquivo Wave de entrada"; then
 
-                report "Arquivo Wave encontrado. Comprimindo e sincronizando..."
+                ecflow_info \
+                    "Arquivo Wave encontrado. Comprimindo e sincronizando..."
 
                 tar --use-compress-program="${PBZIP2}" \
                     -cf "${OUTDIR}/${WAVE_ARCHIVE}" \
-                    -C "${OUTDIR}" "${WAVE}"
+                    -C "${OUTDIR}" \
+                    "${WAVE}"
 
-                rsync -av "${OUTDIR}/${WAVE_ARCHIVE}" \
+                rsync -av \
+                    "${OUTDIR}/${WAVE_ARCHIVE}" \
                     "${RSYNC_BKPDIR}/"
 
-                if check_file_size \
+                if check_remote_file_size \
                     "${BKPDIR}/${WAVE_ARCHIVE}" \
                     "${MIN_WAVE}" \
                     gt \
                     "Backup Wave após sincronização"; then
 
-                    report "OK: Backup Wave concluído com sucesso."
+                    ecflow_info \
+                        "OK: Backup Wave concluído com sucesso."
+
                     ecflow_event Backup_SAFO
                 fi
             fi
         fi
+
 
         # =====================================================
         # Final verification
@@ -377,11 +328,12 @@ backup_iconlam()
         echo
         echo "---------------- Final verification ----------------"
 
-        if check_file_size \
+        if check_remote_file_size \
             "${BKPDIR}/${ATM_ARCHIVE}" \
             "${MIN_GRIB}" \
             gt \
             "Verificação final do backup atmosférico"; then
+
             ATM_OK=1
         fi
 
@@ -390,20 +342,22 @@ backup_iconlam()
             "${MIN_VRF}" \
             ge \
             "Verificação final do VRF"; then
+
             VRF_OK=1
         fi
 
         if [ "${GRID_HAS_WAVE[$GRID]}" -eq 1 ]; then
+
             WAVE_OK=0
 
             if [ "${GRID_HAS_WAVE_PS[$GRID]}" -eq 1 ]; then
 
-                if check_file_size \
+                if check_remote_file_size \
                     "${BKPDIR}/${WAVE_ARCHIVE}" \
                     "${MIN_WAVE}" \
                     gt \
                     "Verificação final do backup Wave" &&
-                   check_file_size \
+                   check_remote_file_size \
                     "${BKPDIR}/${WAVE_PS_ARCHIVE}" \
                     "${MIN_WAVE_PS}" \
                     gt \
@@ -412,7 +366,7 @@ backup_iconlam()
                     WAVE_OK=1
                 fi
 
-            elif check_file_size \
+            elif check_remote_file_size \
                 "${BKPDIR}/${WAVE_ARCHIVE}" \
                 "${MIN_WAVE}" \
                 gt \
@@ -422,6 +376,10 @@ backup_iconlam()
             fi
         fi
 
+
+        # =====================================================
+        # Backup completed
+        # =====================================================
         if [ "${ATM_OK}" -eq 1 ] &&
            [ "${VRF_OK}" -eq 1 ] &&
            [ "${WAVE_OK}" -eq 1 ]; then
@@ -431,8 +389,9 @@ backup_iconlam()
             echo "ICONLAM BACKUP completed successfully!"
             echo "============================================================"
 
-            ecflow_info "Backup feito com sucesso!"
-            ecflow_info2 "Data/Hora: $(date)"
+            ecflow_info \
+                "OK: Backup feito com sucesso!"
+
             ecflow_event Backup_SAFO
 
             return 0
@@ -442,17 +401,25 @@ backup_iconlam()
         ATTEMPT=$((ATTEMPT + 1))
     done
 
+
+    # =========================================================
+    # Timeout
+    # =========================================================
     echo
     echo "ERROR: waited 6 hours but backup files were not ready."
     echo "Aborting script..."
 
-    ecflow_info "FATAL ERROR! Esperei por 6 horas mas não encontrei os arquivos."
-    ecflow_info2 "Script abortado em: $(date)"
+    ecflow_info \
+        "FATAL ERROR: Esperei por 6 horas mas não encontrei os arquivos."
 
     return 2
 }
 
+
+# ============================================================
 # Main
+# ============================================================
+
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
     echo "Usage: $0 HH GRID [YYYYMMDD]"
     echo
